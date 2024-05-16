@@ -69,6 +69,7 @@ pub fn execute(
     }
 }
 
+// Function to pause the contract
 pub fn handle_set_paused(
     deps: DepsMut,
     info: MessageInfo,
@@ -88,6 +89,8 @@ pub fn handle_set_paused(
     Ok(Response::default())
 }
 
+
+// Function to create new entry
 pub fn execute_create_new_entry(
     deps: DepsMut,
     info: MessageInfo,
@@ -116,6 +119,7 @@ pub fn execute_create_new_entry(
         .add_attribute("new_entry_id", id.to_string()))
 }
 
+// Function to update entry
 pub fn execute_update_entry(
     deps: DepsMut,
     info: MessageInfo,
@@ -146,6 +150,7 @@ pub fn execute_update_entry(
         .add_attribute("updated_entry_id", id.to_string()))
 }
 
+// Function to delete entry
 pub fn execute_delete_entry(
     deps: DepsMut,
     info: MessageInfo,
@@ -176,6 +181,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
+// Query to get the particular entry with respect to their id
 fn query_entry(deps: Deps, id: u64) -> StdResult<EntryResponse> {
     let entry = LIST.load(deps.storage, id)?;
     Ok(EntryResponse {
@@ -190,6 +196,7 @@ fn query_entry(deps: Deps, id: u64) -> StdResult<EntryResponse> {
 const MAX_LIMIT: u32 = 30;
 const DEFAULT_LIMIT: u32 = 10;
 
+// Function to get the list of all entries between the limits
 fn query_list(deps: Deps, start_after: Option<u64>, limit: Option<u32>) -> StdResult<ListResponse> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let start = start_after.map(Bound::exclusive);

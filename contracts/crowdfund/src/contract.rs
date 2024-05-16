@@ -80,6 +80,7 @@ pub fn execute(
     }
 }
 
+// Function to pause the contract
 pub fn handle_set_paused(
     deps: DepsMut,
     info: MessageInfo,
@@ -100,7 +101,7 @@ pub fn handle_set_paused(
 }
 
 
-
+// Function to fund the crowdfund program
 pub fn try_fund(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let state =CONFIG.load(deps.storage)?.state;
     if state.paused {
@@ -135,6 +136,7 @@ pub fn try_fund(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response,
     Ok(Response::new())
 }
 
+//Function to execute the crowdfund
 pub fn try_execute(deps: DepsMut, _env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
     let state =CONFIG.load(deps.storage)?.state;
     if state.paused {
@@ -148,6 +150,7 @@ pub fn try_execute(deps: DepsMut, _env: Env, _info: MessageInfo) -> Result<Respo
     Ok(Response::new().add_message(execute_msg))
 }
 
+//Function to refund beck to user 
 pub fn try_refund(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
     let state =CONFIG.load(deps.storage)?.state;
     if state.paused {
@@ -179,6 +182,7 @@ pub fn try_refund(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Respons
     Ok(Response::new().add_messages(msgs))
 }
 
+//Function to claim 
 pub fn try_claim(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let state =CONFIG.load(deps.storage)?.state;
     if state.paused {

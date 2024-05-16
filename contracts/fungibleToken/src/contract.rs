@@ -78,6 +78,7 @@ pub fn execute(
 
 // ********** Transactions **********
 
+// Function to mint the token
 fn mint(deps: DepsMut, info: MessageInfo, amount: u128, recipient: Option<String>) -> CoreumResult<ContractError> {
     assert_owner(deps.storage, &info.sender)?;
     let denom = DENOM.load(deps.storage)?;
@@ -93,6 +94,7 @@ fn mint(deps: DepsMut, info: MessageInfo, amount: u128, recipient: Option<String
         .add_message(msg))
 }
 
+// Function to burn the token
 fn burn(deps: DepsMut, info: MessageInfo, amount: u128) -> CoreumResult<ContractError> {
     assert_owner(deps.storage, &info.sender)?;
     let denom = DENOM.load(deps.storage)?;
@@ -108,6 +110,7 @@ fn burn(deps: DepsMut, info: MessageInfo, amount: u128) -> CoreumResult<Contract
         .add_message(msg))
 }
 
+//Function to freeze token
 fn freeze(
     deps: DepsMut,
     info: MessageInfo,
@@ -129,6 +132,7 @@ fn freeze(
         .add_message(msg))
 }
 
+//Function to unfreeze token
 fn unfreeze(
     deps: DepsMut,
     info: MessageInfo,
