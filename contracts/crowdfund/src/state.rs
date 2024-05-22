@@ -7,19 +7,12 @@ use cw_storage_plus::{Item, Map};
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
     pub owner: Addr,
-    pub state : ContractPause,
     pub denom: String,
     pub goal: Uint128,
     pub start: Timestamp,
     pub deadline: Timestamp,
     pub name: String,
     pub description: String,
-}
-
-#[derive(Default)]
-pub struct ContractPause {
-    pub deployer: Addr,
-    pub paused: bool,
 }
 
 impl Config {

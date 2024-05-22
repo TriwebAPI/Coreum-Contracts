@@ -19,15 +19,8 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    let deployer = env.message.sender.clone();
-    let state = ContractPause {
-        deployer,
-        paused: false,
-    };
-
     let config = Config {
-        owner: msg.owner,
-        state: state.clone(),
+        owner: env.contract.address,
         denom: msg.denom,
         goal: msg.goal,
         start: msg.start.unwrap_or(env.block.time),
@@ -53,9 +46,6 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     use ExecuteMsg::*;
     match msg {
-        ExecuteMsg::ContractPause {
-            val,
-        } => handle_set_paused(deps,info,val),
         Fund {} => {
             rules::HAS_STARTED(&deps, &env, &info)?;
             rules::NOT_CLOSED(&deps, &env, &info)?;
@@ -80,33 +70,8 @@ pub fn execute(
     }
 }
 
-// Function to pause the contract
-pub fn handle_set_paused(
-    deps: DepsMut,
-    info: MessageInfo,
-    val: bool,
-) -> Result<Response,ContractError> {
-    // Ensure only deployer can set paused state
-    let deployer = CONFIG.load(deps.storage)?.state.deployer;
-    if info.sender != deployer {
-        return Err(ContractError::Unauthorized{});
-    }
 
-    // Update paused state
-    let mut state =  CONFIG.load(deps.storage)?.state;
-    state.paused = val;
-    CONFIG.save(deps.storage, &state)?;
-
-    Ok(Response::default())
-}
-
-
-// Function to fund the crowdfund program
 pub fn try_fund(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response, ContractError> {
-    let state =CONFIG.load(deps.storage)?.state;
-    if state.paused {
-        return Err(ContractError::PausedContract{});
-    }
     let config = CONFIG.load(deps.storage)?;
     let sent_funds = info
         .funds
@@ -136,12 +101,7 @@ pub fn try_fund(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response,
     Ok(Response::new())
 }
 
-//Function to execute the crowdfund
 pub fn try_execute(deps: DepsMut, _env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
-    let state =CONFIG.load(deps.storage)?.state;
-    if state.paused {
-        return Err(ContractError::PausedContract{});
-    }
     let execute_msg = EXECUTE_MSG
         .load(deps.storage)?
         .ok_or_else(|| StdError::generic_err("execute_msg not set".to_string()))?;
@@ -150,12 +110,7 @@ pub fn try_execute(deps: DepsMut, _env: Env, _info: MessageInfo) -> Result<Respo
     Ok(Response::new().add_message(execute_msg))
 }
 
-//Function to refund beck to user 
 pub fn try_refund(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
-    let state =CONFIG.load(deps.storage)?.state;
-    if state.paused {
-        return Err(ContractError::PausedContract{});
-    }
     let config = CONFIG.load(deps.storage)?;
     let contract_balance = deps
         .querier
@@ -182,12 +137,7 @@ pub fn try_refund(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Respons
     Ok(Response::new().add_messages(msgs))
 }
 
-//Function to claim 
 pub fn try_claim(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
-    let state =CONFIG.load(deps.storage)?.state;
-    if state.paused {
-        return Err(ContractError::PausedContract{});
-    }
     let config = CONFIG.load(deps.storage)?;
     let contract_balance = deps
         .querier
