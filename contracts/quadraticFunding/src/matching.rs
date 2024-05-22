@@ -1,23 +1,29 @@
 use crate::error::ContractError;
+
 use cosmwasm_schema::cw_serde;
 use integer_sqrt::IntegerSquareRoot;
+
 #[cw_serde]
 pub enum QuadraticFundingAlgorithm {
     CapitalConstrainedLiberalRadicalism { parameter: String },
 }
+
 #[cw_serde]
 pub struct RawGrant {
     pub addr: String,
     pub funds: Vec<u128>,
     pub collected_vote_funds: u128,
 }
+
 #[cw_serde]
 pub struct CalculatedGrant {
     pub addr: String,
     pub grant: u128,
     pub collected_vote_funds: u128,
 }
+
 type LeftOver = u128;
+
 pub fn calculate_clr(
     grants: Vec<RawGrant>,
     budget: Option<u128>,
@@ -26,18 +32,22 @@ pub fn calculate_clr(
     if let Some(budget) = budget {
         // calculate matches sum
         let matched = calculate_matched_sum(grants);
+
         // constraint the grants by budget
         let constrained = constrain_by_budget(matched, budget);
+
         let constrained_sum: u128 = constrained.iter().map(|c| c.grant).sum();
         // calculate leftover
         // shouldn't be used with tokens with > 10 decimal points
         // will cause overflow and panic on the during execution.
         let leftover = budget - constrained_sum;
+
         Ok((constrained, leftover))
     } else {
         Err(ContractError::CLRConstrainRequired {})
     }
 }
+
 // takes square root of each fund, sums, then squares and returns u128
 fn calculate_matched_sum(grants: Vec<RawGrant>) -> Vec<CalculatedGrant> {
     grants
@@ -52,6 +62,7 @@ fn calculate_matched_sum(grants: Vec<RawGrant>) -> Vec<CalculatedGrant> {
         })
         .collect()
 }
+
 // takes square root of each fund, sums, then squares and returns u128
 fn constrain_by_budget(grants: Vec<CalculatedGrant>, budget: u128) -> Vec<CalculatedGrant> {
     let raw_total: u128 = grants.iter().map(|g| g.grant).sum();
@@ -64,10 +75,12 @@ fn constrain_by_budget(grants: Vec<CalculatedGrant>, budget: u128) -> Vec<Calcul
         })
         .collect()
 }
+
 #[cfg(test)]
 mod tests {
     use crate::matching::{calculate_clr, CalculatedGrant, RawGrant};
     use crate::state::Proposal;
+
     #[test]
     fn test_clr_1() {
         let proposal1 = Proposal {
@@ -90,6 +103,7 @@ mod tests {
         let votes2 = vec![12345u128];
         let votes3 = vec![4456u128];
         let votes4 = vec![60000u128];
+
         let grants = vec![
             RawGrant {
                 addr: proposal1.fund_address.clone(),
@@ -143,6 +157,7 @@ mod tests {
             e => panic!("unexpected error, got {:?}", e),
         }
     }
+
     // values got from https://wtfisqf.com/?grant=1200,44999,33&grant=30000,58999&grant=230000,100&grant=100000,5&match=550000
     //        expected   got
     // grant1 60673.38   60212
@@ -171,6 +186,7 @@ mod tests {
         let votes2 = vec![30000u128, 58999u128];
         let votes3 = vec![230000u128, 100u128];
         let votes4 = vec![100000u128, 5u128];
+
         let grants = vec![
             RawGrant {
                 addr: proposal1.fund_address.clone(),
@@ -225,4 +241,3 @@ mod tests {
         }
     }
 }
-Added file

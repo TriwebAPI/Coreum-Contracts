@@ -4,6 +4,7 @@ use crate::state::Proposal;
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Binary, Env};
 use cw0::Expiration;
+
 #[cw_serde]
 pub struct InstantiateMsg {
     pub admin: String,
@@ -15,6 +16,7 @@ pub struct InstantiateMsg {
     pub budget_denom: String,
     pub algorithm: QuadraticFundingAlgorithm,
 }
+
 impl InstantiateMsg {
     pub fn validate(&self, env: Env) -> Result<(), ContractError> {
         // check if proposal period is expired
@@ -25,9 +27,11 @@ impl InstantiateMsg {
         if self.voting_period.is_expired(&env.block) {
             return Err(ContractError::VotingPeriodExpired {});
         }
+
         Ok(())
     }
 }
+
 #[cw_serde]
 pub enum ExecuteMsg {
     CreateProposal {
@@ -41,6 +45,7 @@ pub enum ExecuteMsg {
     },
     TriggerDistribution {},
 }
+
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
@@ -49,17 +54,21 @@ pub enum QueryMsg {
     #[returns(AllProposalsResponse)]
     AllProposals {},
 }
+
 #[cw_serde]
 pub struct AllProposalsResponse {
     pub proposals: Vec<Proposal>,
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cosmwasm_std::testing::mock_env;
+
     #[test]
     fn validate_init_msg() {
         let mut env = mock_env();
+
         env.block.height = 30;
         let msg = InstantiateMsg {
             admin: Default::default(),
@@ -73,6 +82,7 @@ mod tests {
                 parameter: "".to_string(),
             },
         };
+
         let mut msg1 = msg.clone();
         msg1.voting_period = Expiration::AtHeight(15);
         match msg1.validate(env.clone()) {
@@ -80,6 +90,7 @@ mod tests {
             Err(ContractError::VotingPeriodExpired {}) => {}
             Err(err) => println!("{:?}", err),
         }
+
         let mut msg2 = msg.clone();
         msg2.proposal_period = Expiration::AtHeight(15);
         match msg2.validate(env.clone()) {
@@ -87,6 +98,7 @@ mod tests {
             Err(ContractError::ProposalPeriodExpired {}) => {}
             Err(err) => println!("{:?}", err),
         }
+
         match msg.validate(env) {
             Ok(_) => {}
             Err(err) => println!("{:?}", err),
