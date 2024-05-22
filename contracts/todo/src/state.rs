@@ -5,13 +5,6 @@ use cw_storage_plus::{Item, Map};
 #[cw_serde]
 pub struct Config {
     pub owner: Addr,
-    pub state : ContractPause
-}
-
-#[derive(Default)]
-pub struct ContractPause {
-    pub deployer: Addr,
-    pub paused: bool,
 }
 
 #[cw_serde]
@@ -22,7 +15,7 @@ pub struct Entry {
     pub priority: Priority,
 }
 #[cw_serde]
-pub enum Status  {
+pub enum Status {
     ToDo,
     InProgress,
     Done,

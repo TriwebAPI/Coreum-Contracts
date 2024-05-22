@@ -9,8 +9,9 @@ use std::ops::Add;
 
 use crate::error::ContractError;
 use crate::msg::{EntryResponse, ExecuteMsg, InstantiateMsg, ListResponse, QueryMsg};
-use crate::state::{Config, Entry, Priority, Status, CONFIG, ENTRY_SEQ, LIST,ContractPause};
+use crate::state::{Config, Entry, Priority, Status, CONFIG, ENTRY_SEQ, LIST};
 
+// version info for migration
 const CONTRACT_NAME: &str = "crates.io:cw-to-do-list";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -27,16 +28,12 @@ pub fn instantiate(
         .owner
         .and_then(|addr_string| deps.api.addr_validate(addr_string.as_str()).ok())
         .unwrap_or(info.sender);
-    let deployer = _env.message.sender.clone();
-    let state = ContractPause {
-        deployer,
-        paused: false,
-    };
+
     let config = Config {
         owner: owner.clone(),
-        state: state.clone(),
     };
     CONFIG.save(deps.storage, &config)?;
+
     ENTRY_SEQ.save(deps.storage, &0u64)?;
 
     Ok(Response::new()
@@ -52,9 +49,6 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::ContractPause {
-            val,
-        } => handle_set_paused(deps,info,val),
         ExecuteMsg::NewEntry {
             description,
             priority,
@@ -69,39 +63,12 @@ pub fn execute(
     }
 }
 
-// Function to pause the contract
-pub fn handle_set_paused(
-    deps: DepsMut,
-    info: MessageInfo,
-    val: bool,
-) -> Result<Response,ContractError> {
-    // Ensure only deployer can set paused state
-    let deployer = CONFIG.load(deps.storage)?.state.deployer;
-    if info.sender != deployer {
-        return Err(ContractError::Unauthorized{});
-    }
-
-    // Update paused state
-    let mut state =  CONFIG.load(deps.storage)?.state;
-    state.paused = val;
-    CONFIG.save(deps.storage, &state)?;
-
-    Ok(Response::default())
-}
-
-
-// Function to create new entry
 pub fn execute_create_new_entry(
     deps: DepsMut,
     info: MessageInfo,
     description: String,
     priority: Option<Priority>,
 ) -> Result<Response, ContractError> {
-    let state =CONFIG.load(deps.storage)?.state;
-    if state.paused {
-        return Err(ContractError::PausedContract{});
-    }
-
     let owner = CONFIG.load(deps.storage)?.owner;
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
@@ -119,7 +86,6 @@ pub fn execute_create_new_entry(
         .add_attribute("new_entry_id", id.to_string()))
 }
 
-// Function to update entry
 pub fn execute_update_entry(
     deps: DepsMut,
     info: MessageInfo,
@@ -128,10 +94,6 @@ pub fn execute_update_entry(
     status: Option<Status>,
     priority: Option<Priority>,
 ) -> Result<Response, ContractError> {
-    let state =CONFIG.load(deps.storage)?.state;
-    if state.paused {
-        return Err(ContractError::PausedContract{});
-    }
     let owner = CONFIG.load(deps.storage)?.owner;
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
@@ -150,16 +112,11 @@ pub fn execute_update_entry(
         .add_attribute("updated_entry_id", id.to_string()))
 }
 
-// Function to delete entry
 pub fn execute_delete_entry(
     deps: DepsMut,
     info: MessageInfo,
     id: u64,
 ) -> Result<Response, ContractError> {
-    let state =CONFIG.load(deps.storage)?.state;
-    if state.paused {
-        return Err(ContractError::PausedContract{});
-    }
     let owner = CONFIG.load(deps.storage)?.owner;
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
@@ -181,7 +138,6 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-// Query to get the particular entry with respect to their id
 fn query_entry(deps: Deps, id: u64) -> StdResult<EntryResponse> {
     let entry = LIST.load(deps.storage, id)?;
     Ok(EntryResponse {
@@ -196,7 +152,6 @@ fn query_entry(deps: Deps, id: u64) -> StdResult<EntryResponse> {
 const MAX_LIMIT: u32 = 30;
 const DEFAULT_LIMIT: u32 = 10;
 
-// Function to get the list of all entries between the limits
 fn query_list(deps: Deps, start_after: Option<u64>, limit: Option<u32>) -> StdResult<ListResponse> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let start = start_after.map(Bound::exclusive);
