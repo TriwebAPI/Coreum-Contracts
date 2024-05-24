@@ -5,6 +5,8 @@ use cw_storage_plus::{Item, Map};
 #[cw_serde]
 pub struct Config {
     pub owner: Addr,
+    pub deployer : Addr,
+    pub paused : bool
 }
 
 #[cw_serde]

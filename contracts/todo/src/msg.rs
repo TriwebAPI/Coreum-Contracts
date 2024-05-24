@@ -21,6 +21,9 @@ pub enum ExecuteMsg {
     DeleteEntry {
         id: u64,
     },
+    SetPaused { 
+        val : bool,
+    }
 }
 
 #[cw_serde]

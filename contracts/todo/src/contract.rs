@@ -27,10 +27,12 @@ pub fn instantiate(
     let owner = msg
         .owner
         .and_then(|addr_string| deps.api.addr_validate(addr_string.as_str()).ok())
-        .unwrap_or(info.sender);
+        .unwrap_or(info.sender.clone());
 
     let config = Config {
         owner: owner.clone(),
+        deployer: info.sender.clone(),
+        paused: false,
     };
     CONFIG.save(deps.storage, &config)?;
 
@@ -38,7 +40,9 @@ pub fn instantiate(
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
+        .add_attribute("deployer", info.sender)
         .add_attribute("owner", owner))
+        
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -60,6 +64,7 @@ pub fn execute(
             priority,
         } => execute_update_entry(deps, info, id, description, status, priority),
         ExecuteMsg::DeleteEntry { id } => execute_delete_entry(deps, info, id),
+        ExecuteMsg::SetPaused { val } => execute_set_paused(deps, info, val),
     }
 }
 
@@ -69,6 +74,8 @@ pub fn execute_create_new_entry(
     description: String,
     priority: Option<Priority>,
 ) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    ensure_not_paused(&config)?;
     let owner = CONFIG.load(deps.storage)?.owner;
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
@@ -94,6 +101,8 @@ pub fn execute_update_entry(
     status: Option<Status>,
     priority: Option<Priority>,
 ) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    ensure_not_paused(&config)?;
     let owner = CONFIG.load(deps.storage)?.owner;
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
@@ -117,6 +126,8 @@ pub fn execute_delete_entry(
     info: MessageInfo,
     id: u64,
 ) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    ensure_not_paused(&config)?;
     let owner = CONFIG.load(deps.storage)?.owner;
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
@@ -126,6 +137,29 @@ pub fn execute_delete_entry(
     Ok(Response::new()
         .add_attribute("method", "execute_delete_entry")
         .add_attribute("deleted_entry_id", id.to_string()))
+}
+
+pub fn execute_set_paused(
+    deps: DepsMut,
+    info: MessageInfo,
+    val: bool,
+) -> Result<Response, ContractError> {
+    let mut config = CONFIG.load(deps.storage)?;
+    if info.sender != config.deployer {
+        return Err(ContractError::Unauthorized {});
+    }
+    config.paused = val;
+    CONFIG.save(deps.storage, &config)?;
+    Ok(Response::new()
+        .add_attribute("method", "execute_set_paused")
+        .add_attribute("paused", val.to_string()))
+}
+
+fn ensure_not_paused(config: &Config) -> Result<(), ContractError> {
+    if config.paused {
+        return Err(ContractError::ContractPaused {});
+    }
+    Ok(())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -190,6 +224,8 @@ mod tests {
             state,
             Config {
                 owner: Addr::unchecked("creator".to_string()),
+                deployer: Addr::unchecked("creator".to_string()),
+                paused: false,
             }
         );
         //specifying an owner address in the instantiation message
@@ -206,6 +242,8 @@ mod tests {
             state,
             Config {
                 owner: Addr::unchecked("specified_owner".to_string()),
+                deployer: Addr::unchecked("creator".to_string()),
+                paused: false,
             }
         );
     }
@@ -378,6 +416,55 @@ mod tests {
                 priority: Priority::High
             }]),
             list.entries
+        );
+    }
+
+    #[test]
+    fn pause_and_unpause_contract() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let info = mock_info("creator", &[]);
+        let msg = InstantiateMsg { owner: None };
+
+        instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+        let msg = ExecuteMsg::SetPaused { val: true };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![attr("method", "execute_set_paused"), attr("paused", "true")]
+        );
+
+        let msg = ExecuteMsg::NewEntry {
+            description: "A new entry.".to_string(),
+            priority: Some(Priority::Medium),
+        };
+
+        let err = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap_err();
+        match err {
+            ContractError::ContractPaused {} => {}
+            _ => panic!("Expected ContractPaused error"),
+        }
+
+        let msg = ExecuteMsg::SetPaused { val: false };
+        let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![attr("method", "execute_set_paused"), attr("paused", "false")]
+        );
+
+        let msg = ExecuteMsg::NewEntry {
+            description: "A new entry.".to_string(),
+            priority: Some(Priority::Medium),
+        };
+
+        let res = execute(deps.as_mut(), env, mock_info("creator", &[]), msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![
+                attr("method", "execute_create_new_entry"),
+                attr("new_entry_id", "1")
+            ]
         );
     }
 }
