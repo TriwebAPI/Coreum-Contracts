@@ -161,3 +161,146 @@ fn minted_for_airdrop(deps: Deps<CoreumQueries>) -> StdResult<Binary> {
     };
     to_binary(&res)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::{attr, from_binary, Addr};
+
+    #[test]
+    fn proper_initialization() {
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "test".to_string(),
+            precision: 6,
+            initial_amount: Uint128::new(1000),
+            airdrop_amount: Uint128::new(100),
+        };
+        let info = mock_info("creator", &[]);
+
+        let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+        assert_eq!(res.attributes, vec![
+            attr("owner", "creator"),
+            attr("denom", "test-0x0000000000000000000000000000000000000000")
+        ]);
+    }
+
+    #[test]
+    fn mint_for_airdrop_authorized() {
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "test".to_string(),
+            precision: 6,
+            initial_amount: Uint128::new(1000),
+            airdrop_amount: Uint128::new(100),
+        };
+        let info = mock_info("creator", &[]);
+        instantiate(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        let mint_msg = ExecuteMsg::MintForAirdrop { amount: 500 };
+        let res = execute(deps.as_mut(), mock_env(), info, mint_msg).unwrap();
+
+        assert_eq!(res.attributes, vec![
+            attr("method", "mint_for_airdrop"),
+            attr("denom", "test-0x0000000000000000000000000000000000000000"),
+            attr("amount", "500")
+        ]);
+
+        let state = STATE.load(&deps.storage).unwrap();
+        assert_eq!(state.minted_for_airdrop, Uint128::new(1500));
+    }
+
+    #[test]
+    fn mint_for_airdrop_unauthorized() {
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "test".to_string(),
+            precision: 6,
+            initial_amount: Uint128::new(1000),
+            airdrop_amount: Uint128::new(100),
+        };
+        let info = mock_info("creator", &[]);
+        instantiate(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        let unauthorized_info = mock_info("not_creator", &[]);
+        let mint_msg = ExecuteMsg::MintForAirdrop { amount: 500 };
+        let res = execute(deps.as_mut(), mock_env(), unauthorized_info, mint_msg);
+        match res {
+            Err(ContractError::Unauthorized {}) => {}
+            _ => panic!("Must return unauthorized error"),
+        }
+    }
+
+    #[test]
+    fn receive_airdrop() {
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "test".to_string(),
+            precision: 6,
+            initial_amount: Uint128::new(1000),
+            airdrop_amount: Uint128::new(100),
+        };
+        let info = mock_info("creator", &[]);
+        instantiate(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        let mint_msg = ExecuteMsg::MintForAirdrop { amount: 500 };
+        execute(deps.as_mut(), mock_env(), info.clone(), mint_msg).unwrap();
+
+        let receive_msg = ExecuteMsg::ReceiveAirdrop {};
+        let res = execute(deps.as_mut(), mock_env(), mock_info("recipient", &[]), receive_msg).unwrap();
+
+        assert_eq!(res.attributes, vec![
+            attr("method", "receive_airdrop"),
+            attr("denom", "test-0x0000000000000000000000000000000000000000"),
+            attr("amount", "100")
+        ]);
+
+        let state = STATE.load(&deps.storage).unwrap();
+        assert_eq!(state.minted_for_airdrop, Uint128::new(1400));
+    }
+
+    #[test]
+    fn query_token() {
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "test".to_string(),
+            precision: 6,
+            initial_amount: Uint128::new(1000),
+            airdrop_amount: Uint128::new(100),
+        };
+        let info = mock_info("creator", &[]);
+        instantiate(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        let query_msg = QueryMsg::Token {};
+        let bin = query(deps.as_ref(), mock_env(), query_msg).unwrap();
+        let token_response: assetft::TokenResponse = from_binary(&bin).unwrap();
+
+        assert_eq!(token_response.denom, "test-0x0000000000000000000000000000000000000000");
+    }
+
+    #[test]
+    fn query_minted_for_airdrop() {
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "test".to_string(),
+            precision: 6,
+            initial_amount: Uint128::new(1000),
+            airdrop_amount: Uint128::new(100),
+        };
+        let info = mock_info("creator", &[]);
+        instantiate(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        let query_msg = QueryMsg::MintedForAirdrop {};
+        let bin = query(deps.as_ref(), mock_env(), query_msg).unwrap();
+        let amount_response: AmountResponse = from_binary(&bin).unwrap();
+
+        assert_eq!(amount_response.amount, Uint128::new(1000));
+    }
+}

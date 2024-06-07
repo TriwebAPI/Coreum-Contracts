@@ -16,7 +16,7 @@ pub struct InstantiateMsg {
 }
 
 #[cw_serde]
-pub enum EXECUTEMSG {
+pub enum ExecuteMsg {
     Mint { amount: u128, recipient: Option<String> },
     Burn { amount: u128 },
     Freeze { account: String, amount: u128 },
@@ -29,7 +29,7 @@ pub enum EXECUTEMSG {
 }
 
 #[cw_serde]
-pub enum QUERYMSG {
+pub enum QueryMsg {
     Params {},
     Token {},
     Tokens { issuer: String },
