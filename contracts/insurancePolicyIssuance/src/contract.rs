@@ -185,8 +185,3 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         treasury_address,
     })
 }
-
-#[cfg(test)]
-mod tests {
-    // Add tests here
-}
