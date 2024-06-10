@@ -403,3 +403,285 @@ fn query_whitelisted_balances(
     };
     Ok(res)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmwasm_std::{Addr, Coin, Empty};
+    use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
+    use coreum_wasm_sdk::assetft::{self, MsgIssue};
+
+    fn mock_app() -> App {
+        AppBuilder::new().build()
+    }
+
+    fn contract() -> Box<dyn Contract<Empty>> {
+        let contract = ContractWrapper::new(
+            crate::contract::execute,
+            crate::contract::instantiate,
+            crate::contract::query,
+        );
+        Box::new(contract)
+    }
+
+    #[test]
+    fn test_instantiate() {
+        let mut app = mock_app();
+        let contract_id = app.store_code(contract());
+
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "utest".to_string(),
+            precision: 6,
+            initial_amount: 1000,
+            description: "Test token".to_string(),
+            features: vec![],
+            burn_rate: None,
+            send_commission_rate: None,
+            uri: None,
+            uri_hash: None,
+        };
+
+        let owner = Addr::unchecked("owner");
+        let contract_addr = app
+            .instantiate_contract(contract_id, owner.clone(), &msg, &[], "test", None)
+            .unwrap();
+
+        let res: TokenResponse = app
+            .wrap()
+            .query_wasm_smart(contract_addr.clone(), &QueryMsg::Token {})
+            .unwrap();
+        
+        assert_eq!(res.denom, "utest-".to_string() + contract_addr.as_str());
+    }
+
+    #[test]
+    fn test_mint() {
+        let mut app = mock_app();
+        let contract_id = app.store_code(contract());
+
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "utest".to_string(),
+            precision: 6,
+            initial_amount: 1000,
+            description: "Test token".to_string(),
+            features: vec![],
+            burn_rate: None,
+            send_commission_rate: None,
+            uri: None,
+            uri_hash: None,
+        };
+
+        let owner = Addr::unchecked("owner");
+        let recipient = Addr::unchecked("recipient");
+        let contract_addr = app
+            .instantiate_contract(contract_id, owner.clone(), &msg, &[], "test", None)
+            .unwrap();
+
+        let mint_msg = ExecuteMsg::Mint {
+            amount: 500,
+            recipient: Some(recipient.to_string()),
+        };
+
+        app.execute_contract(owner.clone(), contract_addr.clone(), &mint_msg, &[])
+            .unwrap();
+
+        let balance: BalanceResponse = app
+            .wrap()
+            .query_wasm_smart(
+                contract_addr.clone(),
+                &QueryMsg::Balance {
+                    account: recipient.to_string(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(balance.balance.amount.u128(), 500);
+    }
+
+    #[test]
+    fn test_burn() {
+        let mut app = mock_app();
+        let contract_id = app.store_code(contract());
+
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "utest".to_string(),
+            precision: 6,
+            initial_amount: 1000,
+            description: "Test token".to_string(),
+            features: vec![],
+            burn_rate: None,
+            send_commission_rate: None,
+            uri: None,
+            uri_hash: None,
+        };
+
+        let owner = Addr::unchecked("owner");
+        let contract_addr = app
+            .instantiate_contract(contract_id, owner.clone(), &msg, &[], "test", None)
+            .unwrap();
+
+        let burn_msg = ExecuteMsg::Burn { amount: 100 };
+
+        app.execute_contract(owner.clone(), contract_addr.clone(), &burn_msg, &[])
+            .unwrap();
+
+        let balance: BalanceResponse = app
+            .wrap()
+            .query_wasm_smart(
+                contract_addr.clone(),
+                &QueryMsg::Balance {
+                    account: owner.to_string(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(balance.balance.amount.u128(), 900);
+    }
+
+    #[test]
+    fn test_freeze_and_unfreeze() {
+        let mut app = mock_app();
+        let contract_id = app.store_code(contract());
+
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "utest".to_string(),
+            precision: 6,
+            initial_amount: 1000,
+            description: "Test token".to_string(),
+            features: vec![],
+            burn_rate: None,
+            send_commission_rate: None,
+            uri: None,
+            uri_hash: None,
+        };
+
+        let owner = Addr::unchecked("owner");
+        let account = Addr::unchecked("account");
+        let contract_addr = app
+            .instantiate_contract(contract_id, owner.clone(), &msg, &[], "test", None)
+            .unwrap();
+
+        let freeze_msg = ExecuteMsg::Freeze {
+            account: account.to_string(),
+            amount: 100,
+        };
+
+        app.execute_contract(owner.clone(), contract_addr.clone(), &freeze_msg, &[])
+            .unwrap();
+
+        let frozen_balance: FrozenBalanceResponse = app
+            .wrap()
+            .query_wasm_smart(
+                contract_addr.clone(),
+                &QueryMsg::FrozenBalance {
+                    account: account.to_string(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(frozen_balance.frozen_balance.amount.u128(), 100);
+
+        let unfreeze_msg = ExecuteMsg::Unfreeze {
+            account: account.to_string(),
+            amount: 50,
+        };
+
+        app.execute_contract(owner.clone(), contract_addr.clone(), &unfreeze_msg, &[])
+            .unwrap();
+
+        let frozen_balance: FrozenBalanceResponse = app
+            .wrap()
+            .query_wasm_smart(
+                contract_addr.clone(),
+                &QueryMsg::FrozenBalance {
+                    account: account.to_string(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(frozen_balance.frozen_balance.amount.u128(), 50);
+    }
+
+    #[test]
+    fn test_globally_freeze_and_unfreeze() {
+        let mut app = mock_app();
+        let contract_id = app.store_code(contract());
+
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "utest".to_string(),
+            precision: 6,
+            initial_amount: 1000,
+            description: "Test token".to_string(),
+            features: vec![],
+            burn_rate: None,
+            send_commission_rate: None,
+            uri: None,
+            uri_hash: None,
+        };
+
+        let owner = Addr::unchecked("owner");
+        let contract_addr = app
+            .instantiate_contract(contract_id, owner.clone(), &msg, &[], "test", None)
+            .unwrap();
+
+        let globally_freeze_msg = ExecuteMsg::GloballyFreeze {};
+
+        app.execute_contract(owner.clone(), contract_addr.clone(), &globally_freeze_msg, &[])
+            .unwrap();
+
+        let globally_unfreeze_msg = ExecuteMsg::GloballyUnfreeze {};
+
+        app.execute_contract(owner.clone(), contract_addr.clone(), &globally_unfreeze_msg, &[])
+            .unwrap();
+    }
+
+    #[test]
+    fn test_set_whitelisted_limit() {
+        let mut app = mock_app();
+        let contract_id = app.store_code(contract());
+
+        let msg = InstantiateMsg {
+            symbol: "TEST".to_string(),
+            subunit: "utest".to_string(),
+            precision: 6,
+            initial_amount: 1000,
+            description: "Test token".to_string(),
+            features: vec![],
+            burn_rate: None,
+            send_commission_rate: None,
+            uri: None,
+            uri_hash: None,
+        };
+
+        let owner = Addr::unchecked("owner");
+        let account = Addr::unchecked("account");
+        let contract_addr = app
+            .instantiate_contract(contract_id, owner.clone(), &msg, &[], "test", None)
+            .unwrap();
+
+        let set_whitelisted_limit_msg = ExecuteMsg::SetWhitelistedLimit {
+            account: account.to_string(),
+            amount: 200,
+        };
+
+        app.execute_contract(owner.clone(), contract_addr.clone(), &set_whitelisted_limit_msg, &[])
+            .unwrap();
+
+        let whitelisted_balance: WhitelistedBalanceResponse = app
+            .wrap()
+            .query_wasm_smart(
+                contract_addr.clone(),
+                &QueryMsg::WhitelistedBalance {
+                    account: account.to_string(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(whitelisted_balance.whitelisted_balance.amount.u128(), 200);
+    }
+}
