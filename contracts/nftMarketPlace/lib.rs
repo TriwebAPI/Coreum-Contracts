@@ -1,4 +1,4 @@
-mod contract_tests;
+mod tests;
 mod error;
 pub mod contract;
 pub mod helpers;
