@@ -38,3 +38,4 @@ thiserror = "1.0.4"
 cw4-group = "2.0.0-rc.0"
 cw-multi-test = "2.0.0"
 cw20-base = { version = "2.0.0-rc.0", features = ["library"] }
+easy-addr = { path = "../packages/easy-addr" }
