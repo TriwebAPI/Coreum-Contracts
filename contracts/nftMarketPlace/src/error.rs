@@ -18,6 +18,13 @@ pub enum ContractError {
     #[error("NFT not on sale")]
     NftNotOnSale {},
 
+    #[error("Send Single Native Token")]
+    SendSingleNativeToken {},
+  
+
+    #[error("Native Denom Not allowed")]
+    NativeDenomNotAllowed {},
+
     #[error("Marketplace contract is not approved as operator")]
     NotApproved {},
 
