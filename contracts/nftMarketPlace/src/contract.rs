@@ -1,252 +1,300 @@
-use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::state::{Config, Token, CONFIG, TOKENS};
-use crate::ContractError;
-
-#[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::state::{SaleInfo, State, EDITIONS, NFT, NFTS, RENTALS, SALES, STATE};
+use coreum_wasm_sdk::{assetft, core::{CoreumMsg, CoreumQueries}};
 use cosmwasm_std::{
-    to_binary, BankMsg, Coin, CosmosMsg, DepsMut, Env, MessageInfo, Response, SubMsg, Uint128,
-    WasmMsg,
+    entry_point, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, CosmosMsg, BankMsg, Coin, StdError,
 };
 use cw2::set_contract_version;
 
-const CONTRACT_NAME: &str = "crates.io:nft-marketplace";
+const CONTRACT_NAME: &str = "nft-marketplace";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[cfg_attr(not(feature = "library"), entry_point)]
+/// Initialize the contract with owner and marketplace address
+#[entry_point]
 pub fn instantiate(
-    deps: DepsMut,
+    deps: DepsMut<CoreumQueries>,
     _env: Env,
-    _info: MessageInfo,
+    info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
+    // Save the contract state
+    let state = State {
+        owner: deps.api.addr_validate(&msg.owner)?,
+        marketplace: deps.api.addr_validate(&msg.marketplace)?,
+    };
+    STATE.save(deps.storage, &state)?;
+
+    // Set the contract version
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    let cfg = Config {
-        admin: deps.api.addr_validate(msg.admin.as_str())?,
-        nft_contract_addr: deps.api.addr_validate(msg.nft_addr.as_str())?,
-        allowed_native: msg.allowed_native,
-    };
-    CONFIG.save(deps.storage, &cfg)?;
-
-    Ok(Response::default())
+    Ok(Response::new()
+        .add_attribute("method", "instantiate")
+        .add_attribute("owner", info.sender.to_string()))
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
+/// Execute contract functions based on the message type
+#[entry_point]
 pub fn execute(
-    deps: DepsMut,
-    env: Env,
+    deps: DepsMut<CoreumQueries>,
+    _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     match msg {
-        ExecuteMsg::Buy {
-            recipient,
-            token_id,
-        } => execute_buy(deps, env, info, recipient, token_id),
-        ExecuteMsg::ListTokens { tokens } => execute_list_token(deps, env, info, tokens),
-        ExecuteMsg::DelistTokens { tokens } => execute_delist_token(deps, env, info, tokens),
-        ExecuteMsg::UpdatePrice { token, price } => {
-            execute_update_price(deps, env, info, token, price)
-        }
-        ExecuteMsg::UpdateConfig {
-            admin,
-            nft_addr,
-            allowed_native,
-        } => execute_update_config(deps, env, info, admin, nft_addr, allowed_native),
+        ExecuteMsg::CreateNFT { id, metadata, royalties } => create_nft(deps, info, id, metadata, royalties),
+        ExecuteMsg::ListForSale { id, price } => list_for_sale(deps, info, id, price),
+        ExecuteMsg::BuyNFT { id } => buy_nft(deps, info, id),
+        ExecuteMsg::RentNFT { id, duration } => rent_nft(deps, info, id, duration),
+        ExecuteMsg::ReturnNFT { id } => return_nft(deps, info, id),
+        ExecuteMsg::MintEdition { id, edition } => mint_edition(deps, info, id, edition),
+        ExecuteMsg::UpdateNFT { id, new_metadata } => update_nft(deps, info, id, new_metadata),
+        ExecuteMsg::WithdrawFunds {} => withdraw_funds(deps, info),
     }
 }
 
-pub fn execute_list_token(
-    deps: DepsMut,
-    env: Env,
+/// Create a new NFT with specified metadata and optional royalties
+fn create_nft(
+    deps: DepsMut<CoreumQueries>,
     info: MessageInfo,
-    tokens: Vec<Token>,
-) -> Result<Response, ContractError> {
-    if tokens.is_empty() {
-        return Err(ContractError::WrongInput {});
-    }
-    let cfg = CONFIG.load(deps.storage)?;
-    let nft_contract = cw721_base::helpers::Cw721Contract(cfg.nft_contract_addr.clone());
-
-    let mut res = Response::new();
-    for t in tokens {
-        let opt_token = TOKENS.may_load(deps.storage, t.id.clone())?;
-        // if exists update listing, if not register
-        if let Some(mut token) = opt_token.clone() {
-            if token.owner != info.sender {
-                return Err(ContractError::Unauthorized {});
-            }
-            // will not return approval if not found
-            nft_contract
-                .approval(
-                    &deps.querier,
-                    token.id.clone(),
-                    env.contract.address.clone().into_string(),
-                    None,
-                )
-                .map_err(|_e| ContractError::NotApproved {})?;
-
-            token.on_sale = true;
-            TOKENS.save(deps.storage, token.id.clone(), &token)?;
-        } else {
-            // only admin can register new tokens
-            if cfg.admin != info.sender {
-                return Err(ContractError::Unauthorized {});
-            }
-            TOKENS.save(deps.storage, t.id.clone(), &t)?;
-        }
-        res = res.add_attribute("token", format!("token{:?}", t.id));
-    }
-
-    Ok(res.add_attribute("action", "list_token"))
-}
-
-pub fn execute_delist_token(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    tokens: Vec<String>,
-) -> Result<Response, ContractError> {
-    let mut res = Response::new();
-    for t in tokens {
-        let mut token = TOKENS.load(deps.storage, t.clone())?;
-        if token.owner != info.sender {
-            return Err(ContractError::Unauthorized {});
-        }
-        token.on_sale = false;
-        TOKENS.save(deps.storage, t.clone(), &token)?;
-        res = res.add_attribute("token", format!("token{:?}", t));
-    }
-
-    Ok(res.add_attribute("action", "delist_tokens"))
-}
-
-pub fn execute_buy(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    recipient_opt: Option<String>,
-    token_id: String,
-) -> Result<Response, ContractError> {
-    let cfg = CONFIG.load(deps.storage)?;
-    if info.funds.len() != 1 {
-        return Err(ContractError::SendSingleNativeToken {});
-    }
-    let sent_fund = info.funds.get(0).unwrap();
-    if sent_fund.denom != cfg.allowed_native {
-        return Err(ContractError::NativeDenomNotAllowed {
-            denom: sent_fund.clone().denom,
-        });
-    }
-
-    let recipient = match recipient_opt {
-        None => Ok(info.sender),
-        Some(r) => deps.api.addr_validate(&r),
-    }?;
-
-    let mut nft_token = TOKENS.load(deps.storage, token_id.clone())?;
-
-    // check if nft is on sale
-    if !nft_token.on_sale {
-        return Err(ContractError::NftNotOnSale {});
-    }
-
-    if nft_token.price != sent_fund.amount {
-        return Err(ContractError::InsufficientBalance {
-            need: nft_token.price,
-            sent: sent_fund.amount,
-        });
-    }
-
-    // now we can buy
-    let send_msg = cw721::Cw721ExecuteMsg::TransferNft {
-        recipient: recipient.clone().into_string(),
-        token_id: token_id.clone(),
+    id: String,
+    metadata: String,
+    royalties: Option<u64>,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    let nft = NFT {
+        id: id.clone(),
+        owner: info.sender.clone(),
+        metadata,
+        royalties,
     };
-
-    let msg: CosmosMsg = WasmMsg::Execute {
-        contract_addr: cfg.nft_contract_addr.into_string(),
-        msg: to_binary(&send_msg)?,
-        funds: vec![],
-    }
-    .into();
-
-    // payout
-    let bank_send_msg = BankMsg::Send {
-        to_address: nft_token.owner.into_string(),
-        amount: vec![Coin {
-            denom: cfg.allowed_native,
-            amount: nft_token.price,
-        }],
-    };
-
-    // update token owner and sale status
-    nft_token.owner = recipient.clone();
-    nft_token.on_sale = false;
-
-    TOKENS.save(deps.storage, token_id.clone(), &nft_token)?;
-
-    let res = Response::new()
-        .add_submessage(SubMsg::new(msg))
-        .add_message(bank_send_msg)
-        .add_attribute("action", "buy_native")
-        .add_attribute("token_id", token_id)
-        .add_attribute("recipient", recipient.to_string())
-        .add_attribute("price", nft_token.price);
-
-    Ok(res)
-}
-
-pub fn execute_update_price(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    token_id: String,
-    price: Uint128,
-) -> Result<Response, ContractError> {
-    TOKENS.update(deps.storage, token_id.clone(), |exists| match exists {
-        None => Err(ContractError::NotFound {}),
-        Some(mut token) => {
-            if token.owner != info.sender {
-                return Err(ContractError::Unauthorized {});
-            }
-            token.price = price;
-            Ok(token)
-        }
-    })?;
-
+    NFTS.save(deps.storage, id.clone(), &nft)?;
     Ok(Response::new()
-        .add_attribute("action", "update_price")
-        .add_attribute("token_id", token_id)
-        .add_attribute("price", price))
+        .add_attribute("method", "create_nft")
+        .add_attribute("nft_id", id))
 }
 
-pub fn execute_update_config(
-    deps: DepsMut,
-    _env: Env,
+/// List an NFT for sale with a specified price
+fn list_for_sale(
+    deps: DepsMut<CoreumQueries>,
     info: MessageInfo,
-    admin: Option<String>,
-    nft_addr: Option<String>,
-    allowed_native: Option<String>,
-) -> Result<Response, ContractError> {
-    let mut cfg = CONFIG.load(deps.storage)?;
-    if cfg.admin != info.sender {
+    id: String,
+    price: Uint128,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    // Load the NFT from storage
+    let nft = NFTS.load(deps.storage, id.clone())?;
+    
+    // Ensure the sender is the owner of the NFT
+    if nft.owner != info.sender {
         return Err(ContractError::Unauthorized {});
     }
 
-    if let Some(admin) = admin {
-        cfg.admin = deps.api.addr_validate(&admin)?
-    }
-    if let Some(nft_addr) = nft_addr {
-        cfg.nft_contract_addr = deps.api.addr_validate(&nft_addr)?
+    // Save the sale information
+    let sale_info = SaleInfo {
+        price,
+        royalty: nft.royalties,
+    };
+    SALES.save(deps.storage, id.clone(), &sale_info)?;
+
+    Ok(Response::new()
+        .add_attribute("method", "list_for_sale")
+        .add_attribute("nft_id", id)
+        .add_attribute("price", price.to_string()))
+}
+
+/// Buy an NFT that is listed for sale
+fn buy_nft(
+    deps: DepsMut<CoreumQueries>,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    // Load the sale information from storage
+    let sale_info = SALES.load(deps.storage, id.clone())
+        .map_err(|_| ContractError::InvalidNFT {})?;
+    
+    // Load the NFT from storage
+    let mut nft = NFTS.load(deps.storage, id.clone())?;
+
+    // Ensure the buyer has sent enough funds
+    let sent_funds = info.funds.iter().find(|c| c.denom == "uscrt").map(|c| c.amount).unwrap_or(Uint128::zero());
+    if sent_funds < sale_info.price {
+        return Err(ContractError::InsufficientBalance {});
     }
 
-    if let Some(allowed_native) = allowed_native {
-        cfg.allowed_native = allowed_native
+    // Handle the royalty payment if applicable
+    let mut messages: Vec<CosmosMsg<CoreumMsg>> = vec![];
+    let royalty_amount = if let Some(royalty) = sale_info.royalty {
+        let royalty_amount = sale_info.price.multiply_ratio(royalty, 100u128);
+        let royalty_msg = BankMsg::Send {
+            to_address: nft.owner.clone().into(),
+            amount: vec![Coin {
+                denom: "uscrt".to_string(),
+                amount: royalty_amount,
+            }],
+        };
+        messages.push(CosmosMsg::Bank(royalty_msg));
+        royalty_amount
+    } else {
+        Uint128::zero()
+    };
+
+    // Transfer the remaining amount to the seller
+    let seller_payment = sale_info.price.checked_sub(royalty_amount)
+        .map_err(|_| ContractError::Overflow {})?;
+    let seller_msg = BankMsg::Send {
+        to_address: nft.owner.clone().into(),
+        amount: vec![Coin {
+            denom: "uscrt".to_string(),
+            amount: seller_payment,
+        }],
+    };
+    messages.push(CosmosMsg::Bank(seller_msg));
+
+    // Update the NFT owner
+    nft.owner = info.sender.clone();
+    NFTS.save(deps.storage, id.clone(), &nft)?;
+
+    // Remove the sale information
+    SALES.remove(deps.storage, id.clone());
+
+    Ok(Response::new()
+        .add_attribute("method", "buy_nft")
+        .add_attribute("nft_id", id)
+        .add_attribute("buyer", info.sender.to_string())
+        .add_messages(messages))
+}
+
+
+/// Rent an NFT for a specified duration
+fn rent_nft(
+    deps: DepsMut<CoreumQueries>,
+    info: MessageInfo,
+    id: String,
+    duration: u64,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    let nft = NFTS.load(deps.storage, id.clone())?;
+    if nft.owner != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+    RENTALS.save(deps.storage, id.clone(), &(info.sender.clone(), duration))?;
+    Ok(Response::new()
+        .add_attribute("method", "rent_nft")
+        .add_attribute("nft_id", id)
+        .add_attribute("renter", info.sender.to_string())
+        .add_attribute("duration", duration.to_string()))
+}
+
+/// Return a rented NFT
+fn return_nft(
+    deps: DepsMut<CoreumQueries>,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    let rental_info = RENTALS.load(deps.storage, id.clone())?;
+    if rental_info.0 != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+    RENTALS.remove(deps.storage, id.clone());
+    Ok(Response::new()
+        .add_attribute("method", "return_nft")
+        .add_attribute("nft_id", id))
+}
+
+/// Mint a limited edition of an existing NFT
+fn mint_edition(
+    deps: DepsMut<CoreumQueries>,
+    info: MessageInfo,
+    id: String,
+    edition: u32,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    let nft = NFTS.load(deps.storage, id.clone())?;
+    if nft.owner != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+    EDITIONS.save(deps.storage, id.clone(), &edition)?;
+    Ok(Response::new()
+        .add_attribute("method", "mint_edition")
+        .add_attribute("nft_id", id)
+        .add_attribute("edition", edition.to_string()))
+}
+
+/// Update the metadata of an existing NFT
+fn update_nft(
+    deps: DepsMut<CoreumQueries>,
+    info: MessageInfo,
+    id: String,
+    new_metadata: String,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    let mut nft = NFTS.load(deps.storage, id.clone())?;
+    if nft.owner != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+    nft.metadata = new_metadata;
+    NFTS.save(deps.storage, id.clone(), &nft)?;
+    Ok(Response::new()
+        .add_attribute("method", "update_nft")
+        .add_attribute("nft_id", id))
+}
+/// Withdraw accumulated funds from the contract
+fn withdraw_funds(
+    deps: DepsMut<CoreumQueries>,
+    info: MessageInfo,
+) -> Result<Response<CoreumMsg>, ContractError> {
+    let state = STATE.load(deps.storage)?;
+    if info.sender != state.owner {
+        return Err(ContractError::Unauthorized {});
     }
 
-    CONFIG.save(deps.storage, &cfg)?;
+    // Query the contract's balance
+    let balance = deps.querier.query_balance(&state.owner, "uscrt")?;
+    let withdraw_msg = BankMsg::Send {
+        to_address: state.owner.into(),
+        amount: vec![balance],
+    };
 
-    Ok(Response::new().add_attribute("action", "update_config"))
+    Ok(Response::new()
+        .add_attribute("method", "withdraw_funds")
+        .add_message(CosmosMsg::Bank(withdraw_msg)))
+}
+
+/// Query contract data based on the query message type
+#[entry_point]
+pub fn query(deps: Deps<CoreumQueries>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::GetNFT { id } => to_binary(&query_nft(deps, id)?),
+        QueryMsg::GetNFTPrice { id } => to_binary(&query_nft_price(deps, id)?),
+        QueryMsg::GetRentalInfo { id } => to_binary(&query_rental_info(deps, id)?),
+    }
+}
+
+/// Query information about a specific NFT
+fn query_nft(deps: Deps<CoreumQueries>, id: String) -> StdResult<NFT> {
+    let nft = NFTS.load(deps.storage, id)?;
+    Ok(nft)
+}
+
+/// Query the price of a specific NFT
+fn query_nft_price(deps: Deps<CoreumQueries>, id: String) -> StdResult<Uint128> {
+    // Placeholder implementation for querying NFT price
+    Ok(Uint128::zero())
+}
+
+/// Query rental information for a specific NFT
+fn query_rental_info(deps: Deps<CoreumQueries>, id: String) -> StdResult<(Addr, u64)> {
+    let rental_info = RENTALS.load(deps.storage, id)?;
+    Ok(rental_info)
+}
+
+/// Custom contract error types
+#[derive(Debug, PartialEq)]
+pub enum ContractError {
+    Unauthorized {},
+    Std(StdError),
+    InsufficientBalance {},
+    Overflow {},
+    InvalidNFT {},
+}
+
+impl From<StdError> for ContractError {
+    fn from(err: StdError) -> ContractError {
+        ContractError::Std(err)
+    }
 }

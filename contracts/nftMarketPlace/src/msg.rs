@@ -1,75 +1,33 @@
-use crate::state::{Config, Token};
+use cosmwasm_schema::{cw_serde, QueryResponses};
+use cosmwasm_std::{Uint128, Addr};
 
-use cosmwasm_std::Uint128;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use crate::state::NFT;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct InstantiateMsg {
-    pub admin: String,
-    pub nft_addr: String,
-    pub allowed_native: String,
+    pub owner: String,
+    pub marketplace: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub enum ExecuteMsg {
-    /// Buy buys nft using native token
-    Buy {
-        /// recipient if None, tx sender is used
-        recipient: Option<String>,
-        token_id: String,
-    },
-    /// ListTokens registers or relists tokens
-    ListTokens {
-        tokens: Vec<Token>,
-    },
-    /// Delist tokens removes tokens from marketplace
-    DelistTokens {
-        tokens: Vec<String>,
-    },
-    UpdatePrice {
-        token: String,
-        price: Uint128,
-    },
-    UpdateConfig {
-        admin: Option<String>,
-        nft_addr: Option<String>,
-        allowed_native: Option<String>,
-    },
+    CreateNFT { id: String, metadata: String, royalties: Option<u64> },
+    ListForSale { id: String, price: Uint128 },
+    BuyNFT { id: String },
+    RentNFT { id: String, duration: u64 },
+    ReturnNFT { id: String },
+    MintEdition { id: String, edition: u32 },
+    UpdateNFT { id: String, new_metadata: String },
+    WithdrawFunds {},
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
+#[derive(QueryResponses)]
 pub enum QueryMsg {
-    Config {},
-    Token {
-        id: String,
-    },
-    RangeTokens {
-        start_after: Option<String>,
-        limit: Option<u32>,
-    },
-    ListTokens {
-        ids: Vec<String>,
-    },
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct ConfigResponse {
-    pub config: Config,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct TokenResponse {
-    pub token: Token,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct TokensResponse {
-    pub tokens: Vec<Token>,
+    #[returns(NFT)]
+    GetNFT { id: String },
+    #[returns(Uint128)]
+    GetNFTPrice { id: String },
+    #[returns((Addr, u64))]
+    GetRentalInfo { id: String },
 }

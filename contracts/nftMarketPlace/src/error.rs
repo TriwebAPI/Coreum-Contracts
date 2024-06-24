@@ -1,7 +1,7 @@
-use cosmwasm_std::{StdError, Uint128};
+use cosmwasm_std::StdError;
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum ContractError {
     #[error("{0}")]
     Std(#[from] StdError),
@@ -9,28 +9,12 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
-    #[error("NotFound")]
-    NotFound {},
+    #[error("Unlock_time_not_reached!")]
+    Unlock {},
 
-    #[error("Insufficient balance, need: {need} sent: {sent}")]
-    InsufficientBalance { need: Uint128, sent: Uint128 },
+    #[error("You are not the depositor!")]
+    InvalidOwner {},
 
-    #[error("NFT not on sale")]
-    NftNotOnSale {},
-
-    #[error("Send Single Native Token")]
-    SendSingleNativeToken {},
-  
-
-    #[error("Native Denom Not allowed")]
-    NativeDenomNotAllowed {},
-
-    #[error("Marketplace contract is not approved as operator")]
-    NotApproved {},
-
-    #[error("Approval expired")]
-    ApprovalExpired {},
-
-    #[error("Wrong input")]
-    WrongInput {},
+    #[error("Custom Error val: {val:?}")]
+    CustomError { val: String },
 }
