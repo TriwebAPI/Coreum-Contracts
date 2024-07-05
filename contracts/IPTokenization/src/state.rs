@@ -15,7 +15,7 @@ pub struct TokenizedAsset {
 
 #[cw_serde]
 pub enum AssetType {
-    IntellectualProperty,
+    IntellectualProperty
 }
 
 pub const ASSETS: Map<u64, TokenizedAsset> = Map::new("assets");

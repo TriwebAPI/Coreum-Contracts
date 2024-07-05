@@ -24,12 +24,10 @@ pub enum QueryMsg {
     #[returns(Uint128)]
     FractionalOwnership { token_id: u64, owner: String },
     #[returns(String)]
-    TokenURI { token_id: u64 },
-    #[returns(Uint128)]
-    Balance { address: String },
+    TokenURI { token_id: u64 }
 }
 
 #[cw_serde]
 pub enum AssetType {
-    BondOrSecurity,
+    BondOrSecurity
 }

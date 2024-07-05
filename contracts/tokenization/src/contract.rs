@@ -5,6 +5,8 @@ use cosmwasm_std::{
     entry_point, to_binary, BankMsg, Binary, CanonicalAddr, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order, Response, StdError, StdResult, Uint128, WasmMsg
 };
 use cw2::set_contract_version;
+use crate::smarttoken::{BALANCES, TOKEN_INFO};
+use coreum_wasm_sdk::core::{CoreumMsg, CoreumQueries};
 
 const CONTRACT_NAME: &str = "asset-tokenization";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -15,7 +17,7 @@ pub fn instantiate(
     _env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     let owner = deps.api.addr_validate(&msg.owner)?;
     NEXT_TOKEN_ID.save(deps.storage, &1)?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -24,11 +26,11 @@ pub fn instantiate(
 
 #[entry_point]
 pub fn execute(
-    deps: DepsMut,
+    deps:  DepsMut<CoreumQueries>,
     _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     match msg {
         ExecuteMsg::CreateAsset { total_supply, price, uri, asset_type } => create_asset(deps, info, total_supply, price, uri, asset_type),
         ExecuteMsg::TransferOwnership { token_id, to, amount } => transfer_ownership(deps, info, token_id, to, amount),
@@ -38,13 +40,13 @@ pub fn execute(
 }
 
 fn create_asset(
-    deps: DepsMut,
+    deps:DepsMut<CoreumQueries>,
     info: MessageInfo,
     total_supply: Uint128,
     price: Uint128,
     uri: String,
     asset_type: MsgAssetType,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     let owner = info.sender.clone();
     let token_id = NEXT_TOKEN_ID.load(deps.storage)?;
 
@@ -68,12 +70,12 @@ fn create_asset(
 }
 
 fn transfer_ownership(
-    deps: DepsMut,
+    deps:DepsMut<CoreumQueries>,
     info: MessageInfo,
     token_id: u64,
     to: String,
     amount: Uint128,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     let mut asset = ASSETS.load(deps.storage, token_id)?;
 
     if info.sender != asset.owner {

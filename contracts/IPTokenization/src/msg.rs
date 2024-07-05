@@ -27,7 +27,5 @@ pub enum QueryMsg {
 
 #[cw_serde]
 pub enum AssetType {
-    RealWorldAsset,
-    IntellectualProperty,
-    BondOrSecurity,
+    IntellectualProperty
 }

@@ -15,9 +15,7 @@ pub struct TokenizedAsset {
 
 #[cw_serde]
 pub enum AssetType {
-    RealWorldAsset,
-    IntellectualProperty,
-    BondOrSecurity,
+    RealWorldAsset
 }
 
 pub const ASSETS: Map<u64, TokenizedAsset> = Map::new("assets");

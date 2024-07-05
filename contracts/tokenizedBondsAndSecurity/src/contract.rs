@@ -2,20 +2,22 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, AssetType as MsgAssetType};
 use crate::state::{TokenizedAsset, ASSETS, FRACTIONAL_BALANCES, NEXT_TOKEN_ID, AssetType as StateAssetType};
 use cosmwasm_std::{
-    entry_point, to_binary, BankMsg, Binary, CanonicalAddr, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order, Response, StdError, StdResult, Uint128
+    entry_point, to_binary, BankMsg, Binary, CanonicalAddr, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order, Response, StdError, StdResult, Uint128, WasmMsg
 };
 use cw2::set_contract_version;
+use crate::smarttoken::{BALANCES, TOKEN_INFO};
+use coreum_wasm_sdk::core::{CoreumMsg, CoreumQueries};
 
 const CONTRACT_NAME: &str = "tokenized-bonds-securities";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[entry_point]
 pub fn instantiate(
-    deps: DepsMut,
+    deps: DepsMut<CoreumQueries>,
     _env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     let owner = deps.api.addr_validate(&msg.owner)?;
     NEXT_TOKEN_ID.save(deps.storage, &1)?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -24,11 +26,11 @@ pub fn instantiate(
 
 #[entry_point]
 pub fn execute(
-    deps: DepsMut,
+    deps: DepsMut<CoreumQueries>,
     _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     match msg {
         ExecuteMsg::CreateAsset { total_supply, price, uri, asset_type } => create_asset(deps, info, total_supply, price, uri, asset_type),
         ExecuteMsg::PayoutDividends { token_id } => payout_dividends(deps, info, token_id),
@@ -38,13 +40,13 @@ pub fn execute(
 }
 
 fn create_asset(
-    deps: DepsMut,
+    deps: DepsMut<CoreumQueries>,
     info: MessageInfo,
     total_supply: Uint128,
     price: Uint128,
     uri: String,
     asset_type: MsgAssetType,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     let owner = info.sender.clone();
     let token_id = NEXT_TOKEN_ID.load(deps.storage)?;
 
@@ -68,10 +70,10 @@ fn create_asset(
 }
 
 fn payout_dividends(
-    deps: DepsMut,
+    deps: DepsMut<CoreumQueries>,
     _info: MessageInfo,
     token_id: u64,
-) -> Result<Response, ContractError> {
+) -> Result<Response<CoreumMsg>, ContractError> {
     let asset = ASSETS.load(deps.storage, token_id)?;
 
     if asset.asset_type != StateAssetType::BondOrSecurity {
