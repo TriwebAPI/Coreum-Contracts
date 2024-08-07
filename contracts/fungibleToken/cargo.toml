@@ -1,0 +1,38 @@
+[package]
+name = "ft"
+version = "0.1.0"
+authors = ["Coreum"]
+edition = "2021"
+
+exclude = [
+    "ft.wasm",
+    "checksums.txt",
+]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = 'abort'
+incremental = false
+overflow-checks = true
+
+[features]
+backtraces = ["cosmwasm-std/backtraces"]
+library = []
+
+[dependencies]
+cosmwasm-std = "1.5.4"
+cosmwasm-storage = "1.5.0"
+cw-storage-plus = "1.1.0"
+cw2 = "1.1.1"
+thiserror = "1.0.50"
+coreum-wasm-sdk = "0.2.3"
+cosmwasm-schema = "1.4.1"
+cw-ownable = "0.5.1"
