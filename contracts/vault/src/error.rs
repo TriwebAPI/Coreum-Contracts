@@ -9,8 +9,21 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
+    #[error("Insufficient balance")]
+    InsufficientBalance {},
+    
     #[error("Address not whitelisted")]
     NotWhitelisted {},
+
+    #[error("Overflow error")]
+    Overflow {},
+
+    #[error("Divide by zero error")]
+    DivideByZero {},
+
+    #[error("Insufficient funds")]
+    InsufficientFunds {},
+    
 
     #[error("To Do Error")]
     ToDo {},

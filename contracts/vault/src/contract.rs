@@ -15,31 +15,17 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    /* Deps allows to access:
-    1. Read/Write Storage Access
-    2. General Blockchain APIs
-    3. The Querier to the blototal_supplyckchain (raw data queries) */
     deps: DepsMut,
-    /* env gives access to global variables which represent environment information.
-    For exaample:
-    - Block Time/Height
-    - contract address
-    - Transaction Info */
     _env: Env,
-    /* Message Info gives access to information used for authorization.
-    1. Funds sent with the message.
-    2. The message sender (signer). */
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    /* Instantiating the state that will be stored to the blockchain */
    let total_supply=Uint128::zero();
    let token_info=TokenInfo{ token_denom: msg.token_symbol, token_address: msg.token_contract_address };
-    // Save the stete in deps.storage which creates a storage for contract data on the blockchain.
     TOTAL_SUPPLY.save(deps.storage, &total_supply)?;
     TOKEN_INFO.save(deps.storage, &token_info)?;
 
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION).unwrap();
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION);
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -67,30 +53,43 @@ pub mod execute {
         info: MessageInfo,
         amount: Uint128,
     ) -> Result<Response, ContractError> {
-        let token_info=TOKEN_INFO.load(deps.storage)?;
-        let mut total_supply=TOTAL_SUPPLY.load(deps.storage)?;
-        let mut shares=Uint128::zero();
-        let mut balance=BALANCE_OF.load(deps.storage, info.sender.clone()).unwrap_or(Uint128::zero());
-        let balance_of=get_token_balance_of(&deps, info.sender.clone(), token_info.token_address.clone())?;
+        let token_info = TOKEN_INFO.load(deps.storage)?;
+        let mut total_supply = TOTAL_SUPPLY.load(deps.storage)?;
+        let mut shares = Uint128::zero();
+        let mut balance = BALANCE_OF.load(deps.storage, info.sender.clone()).unwrap_or(Uint128::zero());
+        let balance_of = get_token_balance_of(&deps, info.sender.clone(), token_info.token_address.clone())?;
+    
+        if balance_of.is_zero(){
+            return Err(ContractError::InsufficientBalance {});
+        }
         if total_supply.is_zero() {
-            shares+=amount;
+            shares = shares.checked_add(amount).ok_or(ContractError::Overflow)?;
+        } else {
+            let mul_res = amount.checked_mul(total_supply).ok_or(ContractError::Overflow)?;
+            shares = shares.checked_add(mul_res.checked_div(balance_of).ok_or(ContractError::DivideByZero)?).ok_or(ContractError::Overflow)?;
         }
-        else {
-            shares+=amount.checked_mul(total_supply).map_err(StdError::overflow)?.checked_div(balance_of).map_err(StdError::divide_by_zero)?
-        }
-
+    
         give_allowance(env.clone(), info.clone(), amount, token_info.token_address.clone())?;
-        total_supply+=shares;
+    
+        total_supply = total_supply.checked_add(shares).ok_or(ContractError::Overflow)?;
         TOTAL_SUPPLY.save(deps.storage, &total_supply)?;
-        balance+=shares;
+        balance = balance.checked_add(shares).ok_or(ContractError::Overflow)?;
         BALANCE_OF.save(deps.storage, info.sender.clone(), &balance)?;
-
-        let transfer_from_msg=cw20::Cw20ExecuteMsg::TransferFrom { owner: info.sender.to_string(), recipient: env.contract.address.to_string(), amount };
-        let msg=CosmosMsg::Wasm(cosmwasm_std::WasmMsg::Execute { contract_addr: token_info.token_address.to_string(), msg: to_binary(&transfer_from_msg)?, funds: info.funds });
-
-        Ok(Response::new().add_attribute("action", "deposit").add_message(msg))
-
-        
+    
+        let transfer_from_msg = Cw20ExecuteMsg::TransferFrom {
+            owner: info.sender.to_string(),
+            recipient: env.contract.address.to_string(),
+            amount,
+        };
+        let msg = CosmosMsg::Wasm(cosmwasm_std::WasmMsg::Execute {
+            contract_addr: token_info.token_address.to_string(),
+            msg: to_binary(&transfer_from_msg)?,
+            funds: info.funds,
+        });
+    
+        Ok(Response::new()
+            .add_attribute("action", "deposit")
+            .add_message(msg))
     }
 
     pub fn execute_withdraw(
@@ -103,6 +102,16 @@ pub mod execute {
         let mut total_supply=TOTAL_SUPPLY.load(deps.storage)?;
         let mut balance=BALANCE_OF.load(deps.storage, info.sender.clone()).unwrap_or(Uint128::zero());
         let balance_of=get_token_balance_of(&deps, info.sender.clone(), token_info.token_address.clone())?;
+
+           // Check if the user's balance is sufficient
+        if balance < shares {
+        return Err(ContractError::InsufficientFunds {});
+        }
+
+        if total_supply < shares {
+            return Err(ContractError::InsufficientFunds {});
+            }
+
         let amount=shares.checked_mul(balance_of).map_err(StdError::overflow)?.checked_div(total_supply).map_err(StdError::divide_by_zero)?;
         total_supply-=shares;
         TOTAL_SUPPLY.save(deps.storage, &total_supply)?;
