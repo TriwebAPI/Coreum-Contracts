@@ -23,14 +23,14 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-
-    let owner = msg
-        .owner
-        .and_then(|addr_string| deps.api.addr_validate(addr_string.as_str()).ok())
-        .unwrap_or(info.sender.clone());
-
+    let owner = deps.api.addr_validate(&msg.owner).map_err(|_| ContractError::InvalidAddress {})?;
+    
+    if owner.is_empty() {
+        return Err(ContractError::MissingOwner {});
+    }
+    
     let config = Config {
-        owner: owner.clone(),
+        owner,
         deployer: info.sender.clone(),
         paused: false,
     };
