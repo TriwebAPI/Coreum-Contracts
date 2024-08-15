@@ -32,6 +32,13 @@ pub fn instantiate(
         if expiration.is_expired(&env.block) {
             return Err(ContractError::Expired { expiration });
         }
+        let minimum_expiration = env.block.time.plus_seconds(86400); // Example: Require at least 1 hour from now
+        if expiration < minimum_expiration {
+            return Err(ContractError::InvalidExpiration {
+                provided: expiration,
+                minimum: minimum_expiration,
+            });
+        }
     }
     CONFIG.save(deps.storage, &config)?;
     Ok(Response::default())
@@ -57,16 +64,18 @@ fn execute_approve(
     quantity: Option<Vec<Coin>>,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
+
+        // throws error if the contract is expired
+        if let Some(expiration) = config.expiration {
+            if expiration.is_expired(&env.block) {
+                return Err(ContractError::Expired { expiration });
+            }
+        }
+    
     if info.sender != config.arbiter {
         return Err(ContractError::Unauthorized {});
     }
 
-    // throws error if the contract is expired
-    if let Some(expiration) = config.expiration {
-        if expiration.is_expired(&env.block) {
-            return Err(ContractError::Expired { expiration });
-        }
-    }
 
     let amount = if let Some(quantity) = quantity {
         quantity
@@ -74,7 +83,11 @@ fn execute_approve(
         // release everything
         // Querier guarantees to return up-to-date data, including funds sent in this handle message
         // https://github.com/CosmWasm/wasmd/blob/master/x/wasm/internal/keeper/keeper.go#L185-L192
-        deps.querier.query_all_balances(&env.contract.address)?
+        let balance = deps.querier.query_all_balances(&env.contract.address)?;
+        if balance.is_empty() {
+            return Err(ContractError::EmptyBalance {});
+        }
+        balance
     };
     Ok(send_tokens(config.recipient, amount, "approve"))
 }
@@ -90,9 +103,16 @@ fn execute_refund(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Respons
         return Err(ContractError::NotExpired {});
     }
 
+    if info.sender != config.arbiter {
+        return Err(ContractError::Unauthorized {});
+    }
+
     // Querier guarantees to return up-to-date data, including funds sent in this handle message
     // https://github.com/CosmWasm/wasmd/blob/master/x/wasm/internal/keeper/keeper.go#L185-L192
     let balance = deps.querier.query_all_balances(&env.contract.address)?;
+    if balance.is_empty() {
+        return Err(ContractError::EmptyBalance {});
+    }
     Ok(send_tokens(config.source, balance, "refund"))
 }
 
